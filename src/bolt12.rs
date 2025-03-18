@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use bitcoin::{
+    bech32::{self, Hrp},
     key::{Keypair, Secp256k1, Verification},
     secp256k1::{PublicKey, Signing},
 };
@@ -73,7 +74,7 @@ pub fn create_invoice(
         },
     });
 
-    let mut payment_secret = [42; 32];
+    let mut payment_secret = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut payment_secret);
     let payee_tlvs = UnauthenticatedReceiveTlvs {
         payment_secret: PaymentSecret(payment_secret),
@@ -111,7 +112,11 @@ fn entropy_source() -> RandomBytes {
     RandomBytes::new(entropy_bytes)
 }
 
-pub fn blind_onion(invoice: Bolt12Invoice, first_node_id: String, hops: Vec<String>) {
+pub fn blind_onion(
+    invoice: Bolt12Invoice,
+    first_node_id: String,
+    cln: PublicKey,
+) -> (PublicKey, Vec<u8>) {
     let entropy = entropy_source();
 
     let mut entropy_bytes = [0u8; 32];
@@ -127,15 +132,12 @@ pub fn blind_onion(invoice: Bolt12Invoice, first_node_id: String, hops: Vec<Stri
         &EmptyNodeIdLookUp {},
         &secp_ctx,
         OnionMessagePath {
-            intermediate_nodes: hops
-                .into_iter()
-                .map(|s| PublicKey::from_str(&s).unwrap())
-                .collect(),
+            intermediate_nodes: vec![cln],
             destination: Destination::Node(PublicKey::from_str(&first_node_id).unwrap()),
             first_node_addresses: None,
         },
         OffersMessage::Invoice(invoice),
-        None,
+        Some(BlindedMessagePath::new()),
     )
     .unwrap();
     println!(
@@ -145,7 +147,16 @@ pub fn blind_onion(invoice: Bolt12Invoice, first_node_id: String, hops: Vec<Stri
     let packet = onion.1.onion_routing_packet;
     let mut packet_bytes = vec![];
     packet.write(&mut packet_bytes).unwrap();
-    println!("Packet: {:?}", hex::encode(packet_bytes));
+    println!("Packet: {:?}", hex::encode(&packet_bytes));
+    (onion.1.blinding_point, packet_bytes)
+}
+
+pub fn encode_invoice(invoice: &Bolt12Invoice) -> String {
+    let mut writer = Vec::new();
+    invoice.write(&mut writer).unwrap();
+
+    let hrp = Hrp::parse("lni").unwrap();
+    bech32::encode::<bitcoin::bech32::NoChecksum>(hrp, &writer).unwrap()
 }
 
 /*

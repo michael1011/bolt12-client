@@ -1,10 +1,15 @@
 use axum::{response::IntoResponse, routing::post, Extension, Json, Router};
-use bitcoin::{key::Keypair, secp256k1::PublicKey};
+use bitcoin::{
+    bech32::{self, Hrp},
+    key::Keypair,
+    secp256k1::PublicKey,
+};
 use lightning::{
     offers::{invoice_request::InvoiceRequest, offer::Offer},
     onion_message::{messenger::create_onion_message, offers::OffersMessage},
     util::ser::Writeable,
 };
+use rand::RngCore;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -28,7 +33,8 @@ pub struct WebhookRequest {
 
 #[derive(Debug, Serialize)]
 struct WebhookResponse {
-    pub invoice: String,
+    pub blinding_point: String,
+    pub onion: String,
 }
 
 pub struct State {
@@ -57,17 +63,23 @@ pub async fn handle_webhook(
     let req = hex::decode(body.invoice_request).unwrap();
     let invoice_request = InvoiceRequest::try_from(req).unwrap();
 
-    // TODO: random payment hash
-    let invoice =
-        crate::bolt12::create_invoice(&state.keypair, &state.cln, &[0u8; 32], invoice_request);
-    println!("Created invoice");
+    let mut payment_hash = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut payment_hash);
 
-    bolt12::blind_onion(invoice, body.path.first_node_id, body.path.hops);
+    let invoice =
+        crate::bolt12::create_invoice(&state.keypair, &state.cln, &payment_hash, invoice_request);
+    println!(
+        "Created invoice: {}",
+        crate::bolt12::encode_invoice(&invoice)
+    );
+
+    let (blinding_point, onion) = bolt12::blind_onion(invoice, body.path.first_node_id, state.cln);
 
     (
         StatusCode::OK,
         Json(WebhookResponse {
-            invoice: "".to_string(),
+            onion: hex::encode(onion),
+            blinding_point: hex::encode(blinding_point.serialize()),
         }),
     )
         .into_response()
