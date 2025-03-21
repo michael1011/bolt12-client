@@ -35,6 +35,7 @@ async fn main() {
     hooks::listen_webhooks(hooks::State {
         cln,
         keypair: signing_key,
+        offer_id: offer.id(),
     })
     .await;
 }

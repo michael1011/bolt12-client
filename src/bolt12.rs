@@ -1,5 +1,3 @@
-use std::{str::FromStr, sync::Arc};
-
 use bitcoin::{
     bech32::{self, Hrp},
     key::{Keypair, Secp256k1, Verification},
@@ -12,7 +10,7 @@ use lightning::{
             BlindedPaymentPath, Bolt12OfferContext, PaymentConstraints, PaymentContext,
             UnauthenticatedReceiveTlvs,
         },
-        EmptyNodeIdLookUp,
+        BlindedHop, BlindedPath, EmptyNodeIdLookUp, IntroductionNode,
     },
     ln::inbound_payment::ExpandedKey,
     offers::{
@@ -30,6 +28,8 @@ use lightning::{
     util::{ser::Writeable, string::UntrustedString},
 };
 use rand::RngCore;
+
+use crate::hooks::ReplyBlindedPath;
 
 pub fn create_offer<C: Signing + Verification>(
     signing_key: &Keypair,
@@ -52,6 +52,7 @@ pub fn create_offer<C: Signing + Verification>(
 }
 
 pub fn create_invoice(
+    offer_id: &OfferId,
     keypair: &Keypair,
     cln: &PublicKey,
     payment_hash: &[u8; 32],
@@ -62,15 +63,14 @@ pub fn create_invoice(
 
     let nonce = Nonce::from_entropy_source(&entropy_source);
     let payment_context = PaymentContext::Bolt12Offer(Bolt12OfferContext {
-        // TODO: use offer id from offer
-        offer_id: OfferId([42; 32]),
+        offer_id: *offer_id,
         invoice_request: InvoiceRequestFields {
             payer_signing_pubkey: invoice_request.payer_signing_pubkey(),
             quantity: invoice_request.quantity(),
             payer_note_truncated: invoice_request
                 .payer_note()
                 .map(|s| UntrustedString(s.to_string())),
-            human_readable_name: None,
+            human_readable_name: invoice_request.offer_from_hrn().clone(),
         },
     });
 
@@ -114,7 +114,7 @@ fn entropy_source() -> RandomBytes {
 
 pub fn blind_onion(
     invoice: Bolt12Invoice,
-    first_node_id: String,
+    path: ReplyBlindedPath,
     cln: PublicKey,
 ) -> (PublicKey, Vec<u8>) {
     let entropy = entropy_source();
@@ -133,11 +133,31 @@ pub fn blind_onion(
         &secp_ctx,
         OnionMessagePath {
             intermediate_nodes: vec![cln],
-            destination: Destination::Node(PublicKey::from_str(&first_node_id).unwrap()),
+            destination: Destination::BlindedPath(BlindedMessagePath(BlindedPath {
+                introduction_node: match (path.first_node_id, path.first_scid, path.first_scid_dir)
+                {
+                    (Some(first_node_id), None, None) => {
+                        IntroductionNode::NodeId(PublicKey::from_slice(&first_node_id).unwrap())
+                    }
+                    _ => panic!("Have to implement sciddir"),
+                },
+                blinding_point: PublicKey::from_slice(&path.blinded.unwrap()).unwrap(),
+                blinded_hops: path
+                    .hops
+                    .iter()
+                    .map(|hop| BlindedHop {
+                        blinded_node_id: PublicKey::from_slice(
+                            &hop.blinded_node_id.as_ref().unwrap(),
+                        )
+                        .unwrap(),
+                        encrypted_payload: hop.encrypted_recipient_data.as_ref().unwrap().clone(),
+                    })
+                    .collect(),
+            })),
             first_node_addresses: None,
         },
         OffersMessage::Invoice(invoice),
-        Some(BlindedMessagePath::new()),
+        None,
     )
     .unwrap();
     println!(

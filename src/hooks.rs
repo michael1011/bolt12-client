@@ -1,14 +1,6 @@
 use axum::{response::IntoResponse, routing::post, Extension, Json, Router};
-use bitcoin::{
-    bech32::{self, Hrp},
-    key::Keypair,
-    secp256k1::PublicKey,
-};
-use lightning::{
-    offers::{invoice_request::InvoiceRequest, offer::Offer},
-    onion_message::{messenger::create_onion_message, offers::OffersMessage},
-    util::ser::Writeable,
-};
+use bitcoin::{key::Keypair, secp256k1::PublicKey};
+use lightning::offers::{invoice_request::InvoiceRequest, offer::OfferId};
 use rand::RngCore;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -19,20 +11,29 @@ use crate::bolt12;
 
 const ADDR: &str = "127.0.0.1:7678";
 
-#[derive(Debug, Deserialize)]
-pub struct OnionReplyPath {
-    pub first_node_id: String,
-    pub hops: Vec<String>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OnionMessage {
+    pub reply_blindedpath: Option<ReplyBlindedPath>,
+    pub invoice_request: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct WebhookRequest {
-    pub invoice_request: String,
-    pub path: OnionReplyPath,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReplyBlindedPath {
+    pub first_node_id: Option<Vec<u8>>,
+    pub first_scid: Option<String>,
+    pub first_scid_dir: Option<u64>,
+    pub blinded: Option<Vec<u8>>,
+    pub hops: Vec<Hop>,
 }
 
-#[derive(Debug, Serialize)]
-struct WebhookResponse {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Hop {
+    pub blinded_node_id: Option<Vec<u8>>,
+    pub encrypted_recipient_data: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebhookResponse {
     pub blinding_point: String,
     pub onion: String,
 }
@@ -40,6 +41,7 @@ struct WebhookResponse {
 pub struct State {
     pub keypair: Keypair,
     pub cln: PublicKey,
+    pub offer_id: OfferId,
 }
 
 pub async fn listen_webhooks(state: State) {
@@ -56,24 +58,29 @@ pub async fn listen_webhooks(state: State) {
 
 pub async fn handle_webhook(
     Extension(state): Extension<Arc<State>>,
-    Json(body): Json<WebhookRequest>,
+    Json(body): Json<OnionMessage>,
 ) -> impl IntoResponse {
     println!("Received webhook request: {:#?}", body);
 
-    let req = hex::decode(body.invoice_request).unwrap();
-    let invoice_request = InvoiceRequest::try_from(req).unwrap();
+    let invoice_request = InvoiceRequest::try_from(body.invoice_request.clone()).unwrap();
 
     let mut payment_hash = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut payment_hash);
 
-    let invoice =
-        crate::bolt12::create_invoice(&state.keypair, &state.cln, &payment_hash, invoice_request);
+    let invoice = crate::bolt12::create_invoice(
+        &state.offer_id,
+        &state.keypair,
+        &state.cln,
+        &payment_hash,
+        invoice_request.clone(),
+    );
     println!(
         "Created invoice: {}",
         crate::bolt12::encode_invoice(&invoice)
     );
 
-    let (blinding_point, onion) = bolt12::blind_onion(invoice, body.path.first_node_id, state.cln);
+    let (blinding_point, onion) =
+        bolt12::blind_onion(invoice, body.reply_blindedpath.unwrap(), state.cln);
 
     (
         StatusCode::OK,
