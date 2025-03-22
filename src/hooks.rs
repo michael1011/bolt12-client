@@ -7,35 +7,22 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use crate::bolt12;
-
 const ADDR: &str = "127.0.0.1:7678";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OnionMessage {
-    pub reply_blindedpath: Option<ReplyBlindedPath>,
-    pub invoice_request: Vec<u8>,
+pub struct Data {
+    #[serde(rename = "invoiceRequest")]
+    pub invoice_request: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ReplyBlindedPath {
-    pub first_node_id: Option<Vec<u8>>,
-    pub first_scid: Option<String>,
-    pub first_scid_dir: Option<u64>,
-    pub blinded: Option<Vec<u8>>,
-    pub hops: Vec<Hop>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Hop {
-    pub blinded_node_id: Option<Vec<u8>>,
-    pub encrypted_recipient_data: Option<Vec<u8>>,
+pub struct Message {
+    pub data: Data,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookResponse {
-    pub blinding_point: String,
-    pub onion: String,
+    pub invoice: String,
 }
 
 pub struct State {
@@ -58,11 +45,10 @@ pub async fn listen_webhooks(state: State) {
 
 pub async fn handle_webhook(
     Extension(state): Extension<Arc<State>>,
-    Json(body): Json<OnionMessage>,
+    Json(body): Json<Message>,
 ) -> impl IntoResponse {
-    println!("Received webhook request: {:#?}", body);
-
-    let invoice_request = InvoiceRequest::try_from(body.invoice_request.clone()).unwrap();
+    let invoice_request =
+        InvoiceRequest::try_from(hex::decode(body.data.invoice_request.clone()).unwrap()).unwrap();
 
     let mut payment_hash = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut payment_hash);
@@ -74,20 +60,8 @@ pub async fn handle_webhook(
         &payment_hash,
         invoice_request.clone(),
     );
-    println!(
-        "Created invoice: {}",
-        crate::bolt12::encode_invoice(&invoice)
-    );
+    let invoice = crate::bolt12::encode_invoice(&invoice);
+    println!("Created invoice: {}", invoice);
 
-    let (blinding_point, onion) =
-        bolt12::blind_onion(invoice, body.reply_blindedpath.unwrap(), state.cln);
-
-    (
-        StatusCode::OK,
-        Json(WebhookResponse {
-            onion: hex::encode(onion),
-            blinding_point: hex::encode(blinding_point.serialize()),
-        }),
-    )
-        .into_response()
+    (StatusCode::OK, Json(WebhookResponse { invoice })).into_response()
 }

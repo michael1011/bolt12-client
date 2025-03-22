@@ -30,7 +30,7 @@ async fn main() {
     );
 
     let offer = bolt12::create_offer(&signing_key, &cln, &secp);
-    println!("Offer: {}", offer.to_string());
+    println!("Offer: {}", offer);
 
     hooks::listen_webhooks(hooks::State {
         cln,
