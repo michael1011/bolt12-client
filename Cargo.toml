@@ -7,8 +7,9 @@ edition = "2021"
 anyhow = "1.0.95"
 axum = "0.8.1"
 bitcoin = { version = "0.32.5", features = ["rand"] }
+bitcoin_hashes = "0.16.0"
 hex = "0.4.3"
-lightning = { git = "https://github.com/JssDWt/rust-lightning.git", rev = "1dc18c201beef9fc9746e306f06343ec0cec7766" }
+lightning = "0.1.1"
 rand = "0.8.5"
 reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0.217", features = ["derive"] }

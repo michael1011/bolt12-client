@@ -1,5 +1,6 @@
 use axum::{response::IntoResponse, routing::post, Extension, Json, Router};
 use bitcoin::{key::Keypair, secp256k1::PublicKey};
+use bitcoin_hashes::Sha256;
 use lightning::offers::{invoice_request::InvoiceRequest, offer::OfferId};
 use rand::RngCore;
 use reqwest::StatusCode;
@@ -50,8 +51,10 @@ pub async fn handle_webhook(
     let invoice_request =
         InvoiceRequest::try_from(hex::decode(body.data.invoice_request.clone()).unwrap()).unwrap();
 
-    let mut payment_hash = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut payment_hash);
+    let mut preimage = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut preimage);
+    println!("Preimage: {}", hex::encode(preimage));
+    let payment_hash = Sha256::hash(&preimage).to_byte_array();
 
     let invoice = crate::bolt12::create_invoice(
         &state.offer_id,
