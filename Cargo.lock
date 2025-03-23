@@ -653,9 +653,8 @@ checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
 
 [[package]]
 name = "lightning"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3224b577def19c2bb3dcf2c35a95d94909183204c061746d1245ecc6e889e8e"
+version = "0.2.0+git"
+source = "git+https://github.com/michael1011/rust-lightning.git?rev=1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa#1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -663,15 +662,16 @@ dependencies = [
  "hashbrown",
  "libm",
  "lightning-invoice",
+ "lightning-macros",
  "lightning-types",
+ "musig2",
  "possiblyrandom",
 ]
 
 [[package]]
 name = "lightning-invoice"
-version = "0.33.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4254e7d05961a3728bc90737c522e7091735ba6f2f71014096d4b3eb4ee5d89"
+version = "0.34.0+git"
+source = "git+https://github.com/michael1011/rust-lightning.git?rev=1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa#1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -679,10 +679,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightning-macros"
+version = "0.2.0+git"
+source = "git+https://github.com/michael1011/rust-lightning.git?rev=1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa#1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "lightning-types"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2cd84d4e71472035903e43caded8ecc123066ce466329ccd5ae537a8d5488c7"
+version = "0.3.0+git"
+source = "git+https://github.com/michael1011/rust-lightning.git?rev=1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa#1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa"
 dependencies = [
  "bitcoin",
 ]
@@ -738,6 +747,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "musig2"
+version = "0.1.0"
+source = "git+https://github.com/arik-so/rust-musig2?rev=6f95a05718cbb44d8fe3fa6021aea8117aa38d50#6f95a05718cbb44d8fe3fa6021aea8117aa38d50"
+dependencies = [
+ "bitcoin",
+]
+
+[[package]]
 name = "object"
 version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -773,8 +790,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "possiblyrandom"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b122a615d72104fb3d8b26523fdf9232cd8ee06949fb37e4ce3ff964d15dffd"
+source = "git+https://github.com/michael1011/rust-lightning.git?rev=1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa#1fdf7e6fbb6b69bfd60d8d2ecfeb8919630d80aa"
 dependencies = [
  "getrandom",
 ]

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
+use crate::boltz;
+
 const ADDR: &str = "127.0.0.1:7678";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,20 +53,28 @@ pub async fn handle_webhook(
     let invoice_request =
         InvoiceRequest::try_from(hex::decode(body.data.invoice_request.clone()).unwrap()).unwrap();
 
+    let params = boltz::bolt12_params("L-BTC").await.unwrap();
+    let magic_address = "el1qqwml59kfp9fn5dhq4g5jy680dt6pr6zrudlwvvyvnqxp02zzzr0tefcysmulpmvf7zq0e4jhl7zg0qkur5ks2x0rd9cz7lkqs";
+
     let mut preimage = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut preimage);
     println!("Preimage: {}", hex::encode(preimage));
     let payment_hash = Sha256::hash(&preimage).to_byte_array();
 
-    let invoice = crate::bolt12::create_invoice(
+    let (invoice, address_signature) = crate::bolt12::create_invoice(
         &state.offer_id,
         &state.keypair,
         &state.cln,
         &payment_hash,
+        &params,
+        Some(magic_address.to_string()),
         invoice_request.clone(),
     );
     let invoice = crate::bolt12::encode_invoice(&invoice);
     println!("Created invoice: {}", invoice);
+    if let Some(address_signature) = address_signature {
+        println!("Address signature: {}", hex::encode(address_signature));
+    }
 
     (StatusCode::OK, Json(WebhookResponse { invoice })).into_response()
 }

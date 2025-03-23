@@ -10,6 +10,7 @@ use lightning::{
             BlindedPaymentPath, Bolt12OfferContext, PaymentConstraints, PaymentContext,
             UnauthenticatedReceiveTlvs,
         },
+        Direction, IntroductionNode,
     },
     ln::inbound_payment::ExpandedKey,
     offers::{
@@ -23,6 +24,8 @@ use lightning::{
     util::{ser::Writeable, string::UntrustedString},
 };
 use rand::RngCore;
+
+use crate::boltz::Bolt12Params;
 
 pub fn create_offer<C: Signing + Verification>(
     signing_key: &Keypair,
@@ -49,8 +52,10 @@ pub fn create_invoice(
     keypair: &Keypair,
     cln: &PublicKey,
     payment_hash: &[u8; 32],
+    params: &Bolt12Params,
+    magic_address: Option<String>,
     invoice_request: InvoiceRequest,
-) -> Bolt12Invoice {
+) -> (Bolt12Invoice, Option<Vec<u8>>) {
     let entropy_source = entropy_source();
     let secp_ctx = Secp256k1::new();
 
@@ -81,21 +86,55 @@ pub fn create_invoice(
     let expanded_key = ExpandedKey::new(keypair.secret_key().secret_bytes());
     let payee_tlvs = payee_tlvs.authenticate(nonce, &expanded_key);
 
-    // TODO: more hops?
-    let payment_path =
-        BlindedPaymentPath::one_hop(*cln, payee_tlvs, 144, &entropy_source, &secp_ctx).unwrap();
+    let mut payment_paths = vec![BlindedPaymentPath::one_hop(
+        *cln,
+        payee_tlvs.clone(),
+        params.min_cltv as u16,
+        &entropy_source,
+        &secp_ctx,
+    )
+    .unwrap()];
+
+    let address_signature = if let Some(magic_address) = magic_address {
+        let mut payment_path = BlindedPaymentPath::one_hop(
+            *cln,
+            payee_tlvs,
+            params.min_cltv as u16,
+            &entropy_source,
+            &secp_ctx,
+        )
+        .unwrap();
+        payment_path.inner_path.introduction_node = IntroductionNode::DirectedShortChannelId(
+            Direction::NodeOne,
+            params.magic_routing_hint.channel_id,
+        );
+        payment_paths.push(payment_path);
+
+        let signature = secp_ctx.sign_schnorr_no_aux_rand(
+            &bitcoin::secp256k1::Message::from_digest(
+                *bitcoin_hashes::Sha256::hash(magic_address.as_bytes()).as_byte_array(),
+            ),
+            keypair,
+        );
+        Some(signature.serialize().to_vec())
+    } else {
+        None
+    };
 
     let unsigned = invoice_request
-        .respond_with(vec![payment_path], PaymentHash(*payment_hash))
+        .respond_with(payment_paths, PaymentHash(*payment_hash))
         .unwrap();
 
-    unsigned
-        .build()
-        .unwrap()
-        .sign(|msg: &UnsignedBolt12Invoice| {
-            Ok(secp_ctx.sign_schnorr_no_aux_rand(msg.as_ref().as_digest(), keypair))
-        })
-        .unwrap()
+    (
+        unsigned
+            .build()
+            .unwrap()
+            .sign(|msg: &UnsignedBolt12Invoice| {
+                Ok(secp_ctx.sign_schnorr_no_aux_rand(msg.as_ref().as_digest(), keypair))
+            })
+            .unwrap(),
+        address_signature,
+    )
 }
 
 pub fn encode_invoice(invoice: &Bolt12Invoice) -> String {
